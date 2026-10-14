@@ -8,16 +8,26 @@ import Feedback from './components/Feedback'
 import ChatDock from './components/ChatDock'
 import Settings from './components/Settings'
 import BankGen from './components/BankGen'
+import Mistakes from './components/Mistakes'
 import { bankBySubject, shuffle } from './data/questions'
 import { categoriesBySubject, categoryName } from './data/curriculum'
 import { tokenize } from './lib/tokenize'
 import { evaluate } from './lib/feedback'
 import { askTutor, explainMistake, generateQuestion, isAIConfigured } from './lib/ai'
 import { clearGenBank, loadGenBank, saveGenBank } from './lib/store'
+import {
+  applyAnswer,
+  computeStreak,
+  dueMistakes,
+  loadProgress,
+  saveProgress,
+  todayKey,
+} from './lib/progress'
+import type { Progress } from './lib/progress'
 import type { ChatTurn } from './lib/ai'
-import { DIFFICULTY_LABEL, emptyStats } from './types'
+import { DIFFICULTY_LABEL } from './types'
 import type { CatStat } from './components/FilterBar'
-import type { Evaluation, Question, Stats, Subject } from './types'
+import type { Evaluation, Question, Subject } from './types'
 
 const SUBJECT_LABEL: Record<Subject, string> = { chinese: '语文', math: '数学', english: '英语' }
 
@@ -31,7 +41,6 @@ export default function App() {
   const [chosen, setChosen] = useState<number | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null)
-  const [stats, setStats] = useState<Stats>(emptyStats)
   const [catStats, setCatStats] = useState<Record<string, CatStat>>({})
 
   const [loadingQ, setLoadingQ] = useState(false)
@@ -40,7 +49,13 @@ export default function App() {
   const [aiOn, setAiOn] = useState(isAIConfigured)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [bankOpen, setBankOpen] = useState(false)
+  const [mistakesOpen, setMistakesOpen] = useState(false)
   const [genBank, setGenBank] = useState<Question[]>(() => loadGenBank())
+
+  const [progress, setProgress] = useState<Progress>(() => loadProgress())
+  const [reviewing, setReviewing] = useState(false)
+  const [reviewQueue, setReviewQueue] = useState<Question[]>([])
+  const [reviewIndex, setReviewIndex] = useState(0)
 
   const [aiText, setAiText] = useState<string | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
@@ -51,11 +66,10 @@ export default function App() {
 
   const queues = useRef<Map<string, Question[]>>(new Map())
 
-  // 生成题库用 ref 读取，避免题库变化时重建出题函数、打断当前题目
   const genBankRef = useRef<Question[]>(genBank)
   useEffect(() => {
     genBankRef.current = genBank
-    queues.current.clear() // 题库变了，清队列，下次出题用上新题
+    queues.current.clear()
   }, [genBank])
 
   const tokens = useMemo(
@@ -69,6 +83,10 @@ export default function App() {
     return Array.from(s).sort((a, b) => a - b)
   }, [subject, genBank])
 
+  const due = useMemo(() => dueMistakes(progress), [progress])
+  const todayAnswered = progress.days[todayKey()]?.answered ?? 0
+  const dayStreak = useMemo(() => computeStreak(progress.days), [progress.days])
+
   const resetRound = useCallback(() => {
     setSelected(new Set())
     setChosen(null)
@@ -77,7 +95,6 @@ export default function App() {
     setAiText(null)
   }, [])
 
-  // 内置题库 + 本机生成的题库
   const buildPool = useCallback((s: Subject, cat: string, diff: number) => {
     let qs = [...bankBySubject(s), ...genBankRef.current.filter((q) => q.subject === s)]
     if (cat !== 'all') qs = qs.filter((q) => q.category === cat)
@@ -120,13 +137,29 @@ export default function App() {
   )
 
   useEffect(() => {
+    if (reviewing) return
     loadFromBank(subject, category, diffFilter)
     setChatMsgs([])
-  }, [subject, category, diffFilter, loadFromBank])
+  }, [subject, category, diffFilter, loadFromBank, reviewing])
+
+  const exitReview = useCallback(() => {
+    setReviewing(false)
+    setReviewQueue([])
+    setReviewIndex(0)
+  }, [])
 
   const changeSubject = (s: Subject) => {
+    exitReview()
     setSubject(s)
     setCategory('all')
+  }
+  const changeCategory = (c: string) => {
+    exitReview()
+    setCategory(c)
+  }
+  const changeDiff = (d: number) => {
+    exitReview()
+    setDiffFilter(d)
   }
 
   const toggleToken = (index: number) => {
@@ -148,15 +181,10 @@ export default function App() {
     const ev = evaluate(question, tokens, selected, chosen)
     setEvaluation(ev)
     setSubmitted(true)
-    const success = ev.optionCorrect && ev.missed.length === 0
-    setStats((s) => {
-      const streak = success ? s.streak + 1 : 0
-      return {
-        answered: s.answered + 1,
-        correct: s.correct + (ev.optionCorrect ? 1 : 0),
-        streak,
-        bestStreak: Math.max(s.bestStreak, streak),
-      }
+    setProgress((prev) => {
+      const next = applyAnswer(prev, question, ev)
+      saveProgress(next)
+      return next
     })
     setCatStats((prev) => {
       const cur = prev[question.category] ?? { a: 0, c: 0 }
@@ -168,7 +196,33 @@ export default function App() {
   }
 
   const retry = () => resetRound()
-  const next = () => loadFromBank(subject, category, diffFilter)
+
+  const next = () => {
+    if (reviewing) {
+      const ni = reviewIndex + 1
+      if (ni < reviewQueue.length) {
+        setReviewIndex(ni)
+        setQuestion(reviewQueue[ni])
+        resetRound()
+      } else {
+        exitReview()
+      }
+      return
+    }
+    loadFromBank(subject, category, diffFilter)
+  }
+
+  const startReview = () => {
+    const list = dueMistakes(progress).map((m) => m.question)
+    if (!list.length) return
+    const q = shuffle(list)
+    setReviewQueue(q)
+    setReviewIndex(0)
+    setReviewing(true)
+    setQuestion(q[0])
+    resetRound()
+    setMistakesOpen(false)
+  }
 
   const onGenerated = (qs: Question[]) => {
     setGenBank((prev) => {
@@ -180,6 +234,13 @@ export default function App() {
   const onClearBank = () => {
     clearGenBank()
     setGenBank([])
+  }
+  const onClearMistakes = () => {
+    setProgress((prev) => {
+      const next = { ...prev, mistakes: [] }
+      saveProgress(next)
+      return next
+    })
   }
 
   const askAI = async () => {
@@ -227,19 +288,22 @@ export default function App() {
       <Header
         subject={subject}
         onSubject={changeSubject}
-        stats={stats}
         aiConfigured={aiOn}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenBank={() => setBankOpen(true)}
+        onOpenMistakes={() => setMistakesOpen(true)}
+        todayAnswered={todayAnswered}
+        dayStreak={dayStreak}
+        dueCount={due.length}
       />
 
       <main className="sheet">
         <FilterBar
           subject={subject}
           category={category}
-          onCategory={setCategory}
+          onCategory={changeCategory}
           difficulty={diffFilter}
-          onDifficulty={setDiffFilter}
+          onDifficulty={changeDiff}
           availableDiffs={availableDiffs}
           catStats={catStats}
         />
@@ -251,7 +315,21 @@ export default function App() {
               <span className="chip soft">{categoryName(question.category)}</span>
               <span className="chip soft">{DIFFICULTY_LABEL[question.difficulty]}</span>
               {question.source === 'ai' && <span className="chip ai">AI 出题</span>}
-              <span className="sheet-step">① 划重点　② 选意思</span>
+              {reviewing ? (
+                <span className="chip review">
+                  错题复习 {reviewIndex + 1}/{reviewQueue.length}
+                  <button
+                    type="button"
+                    className="chip-x"
+                    onClick={exitReview}
+                    aria-label="退出复习"
+                  >
+                    ×
+                  </button>
+                </span>
+              ) : (
+                <span className="sheet-step">① 划重点　② 选意思</span>
+              )}
             </div>
 
             <StemCard
@@ -280,9 +358,9 @@ export default function App() {
                     我读懂了，看结果
                   </button>
                   <button type="button" className="btn ghost" onClick={next} disabled={loadingQ}>
-                    <RefreshCw size={16} /> 换一题
+                    <RefreshCw size={16} /> {reviewing ? '跳过' : '换一题'}
                   </button>
-                  {aiOn && (
+                  {aiOn && !reviewing && (
                     <button
                       type="button"
                       className="btn ghost"
@@ -296,7 +374,7 @@ export default function App() {
               ) : (
                 <>
                   <button type="button" className="btn primary big" onClick={next}>
-                    下一题
+                    {reviewing && reviewIndex + 1 >= reviewQueue.length ? '完成复习' : '下一题'}
                   </button>
                   <button type="button" className="btn ghost" onClick={retry}>
                     重做这题
@@ -353,6 +431,17 @@ export default function App() {
         genCount={genBank.length}
         onGenerated={onGenerated}
         onClear={onClearBank}
+      />
+
+      <Mistakes
+        open={mistakesOpen}
+        onClose={() => setMistakesOpen(false)}
+        progress={progress}
+        dueCount={due.length}
+        dayStreak={dayStreak}
+        todayAnswered={todayAnswered}
+        onStartReview={startReview}
+        onClear={onClearMistakes}
       />
     </div>
   )

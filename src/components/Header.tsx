@@ -1,23 +1,29 @@
-import { Database, Settings as SettingsIcon } from 'lucide-react'
+import { BookX, Database, Settings as SettingsIcon } from 'lucide-react'
 import { SUBJECTS } from '../types'
-import type { Stats, Subject } from '../types'
+import type { Subject } from '../types'
 
 interface Props {
   subject: Subject
   onSubject: (s: Subject) => void
-  stats: Stats
   onOpenSettings: () => void
   onOpenBank: () => void
+  onOpenMistakes: () => void
   aiConfigured: boolean
+  todayAnswered: number
+  dayStreak: number
+  dueCount: number
 }
 
 export default function Header({
   subject,
   onSubject,
-  stats,
   onOpenSettings,
   onOpenBank,
+  onOpenMistakes,
   aiConfigured,
+  todayAnswered,
+  dayStreak,
+  dueCount,
 }: Props) {
   return (
     <header className="topbar">
@@ -40,18 +46,24 @@ export default function Header({
       </nav>
 
       <div className="topbar-right">
-        <div className="score" title="答对题数 / 总题数">
-          <b>
-            {stats.correct}
-            <i>/</i>
-            {stats.answered}
-          </b>
-          <span>答对</span>
+        <div className="score" title="今天做了多少题">
+          <b>{todayAnswered}</b>
+          <span>今日</span>
         </div>
-        <div className="score" title="连续完全读对的次数">
-          <b>{stats.streak}</b>
-          <span>连对</span>
+        <div className="score" title="连续打卡天数">
+          <b>{dayStreak}</b>
+          <span>连续</span>
         </div>
+        <button
+          type="button"
+          className={`icon-btn ${dueCount > 0 ? 'has-badge' : ''}`}
+          onClick={onOpenMistakes}
+          aria-label="错题本"
+          title={dueCount > 0 ? `错题本 · ${dueCount} 题待复习` : '错题本'}
+        >
+          <BookX size={18} />
+          {dueCount > 0 && <span className="icon-badge">{dueCount > 99 ? '99+' : dueCount}</span>}
+        </button>
         <button
           type="button"
           className="icon-btn"

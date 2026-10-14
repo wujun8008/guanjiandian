@@ -83,8 +83,9 @@ src/
     feedback.ts          # 批改引擎：判定对错、生成针对性建议
     ai.ts                # OpenAI 兼容客户端：出题 / 陪读问答 / 个性化点评
     store.ts             # 生成题库的本地存储（localStorage）
+    progress.ts          # 学习进度：按天记录 + 错题本 + 间隔重复
   components/
-    Header.tsx           # 顶栏：品牌、学科切换、统计、生成题库、设置
+    Header.tsx           # 顶栏：品牌、学科切换、今日/连续、错题本、生成题库、设置
     FilterBar.tsx        # 专项训练（题型）+ 难度筛选
     StemCard.tsx         # 题干 + 荧光笔划重点
     Options.tsx          # 核心意思 4 选 1
@@ -92,6 +93,7 @@ src/
     ChatDock.tsx         # 底部「问问 AI 老师」抽屉
     Settings.tsx         # AI 设置弹窗
     BankGen.tsx          # 生成题库弹窗
+    Mistakes.tsx         # 错题本弹窗（待复习 / 已掌握 / 开始复习）
 docs/出题规范.md          # AI 出题的规范（构建时打进产物）
 Dockerfile               # 多阶段构建（node 构建 → nginx 托管）
 nginx.conf               # 静态站点配置（gzip / 缓存 / SPA 回退）
@@ -142,6 +144,17 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
 出题依据是 **`docs/出题规范.md`** —— 它通过 Vite 的 `?raw` 在**构建时**打进产物，
 作为 `ai.ts` 里出题 system prompt 的一部分。**要改 AI 出题风格，就改这个 md**（改完需重新构建）。
 
+### 错题本 · 间隔重复（`src/lib/progress.ts` + `src/components/Mistakes.tsx`）
+
+这是"长周期提升"的核心机制：
+
+- **按天记录**：`days[YYYY-MM-DD] = { answered, correct, mastered }`，刷新不丢；
+- **错题本**：没完全读对（`!optionCorrect || missed.length > 0`）的题进本，存**题目快照**；
+- **Leitner 盒子**：盒子 `1..5`，间隔 `[_, 30分钟, 1天, 3天, 7天, 15天]`；
+  答对进一格、答错归零到 1；过盒子 5 → 记「已掌握」并移出；
+- **复习模式**：只出 `dueAt <= now` 的错题，`App` 里用 `reviewing / reviewQueue / reviewIndex` 管理；
+- 全部存 localStorage（键 `guanjiandian.progress.v1`）。连续天数用 `computeStreak`（今天没做不算断）。
+
 ### 设计
 
 隐喻是**作业纸 + 荧光笔**：方格纸底纹，点词 = 划荧光笔（带从左到右的书写动画），
@@ -164,10 +177,12 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
 
 - 全部功能 + 30 题题库（15 题型 × 基础/进阶）
 - **AI 生成题库**：按《出题规范》批量出题、存入本机、与内置题库合并
+- **学习进度持久化 + 错题本 + 间隔重复**（长周期提升的地基）
 - `typecheck` / `build` 通过
 - **数据自检通过**：30 题、15 题型，关键词零错位、答案唯一、每题型基础+进阶齐全
 - **生成流程端到端验证**（Playwright 拦截接口）：生成 10 题 → 写入 localStorage → 在筛选里能抽到
-- 截图确认：专项切换、进阶出题、批改反馈、生成题库弹窗
+- **错题本端到端验证**：答错入本 → 到期 → 复习答对 → 盒子 1→2、累计订正 +1
+- 截图确认：专项切换、进阶出题、批改反馈、生成题库弹窗、错题本
 - 单文件版从 `file://` 打开零报错
 - 已推 GitHub；已加 Docker 部署
 
@@ -175,9 +190,11 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
 
 ## 8. 下一步（还没做）
 
+- **周期挑战目标**：可设定的目标（连续 N 天 / 某题型刷到 ≥85% / 两周 N 题）+ 打卡日历 + 徽章；
+  持久化已经就绪，差"目标设定 + 进度展示"这一层；
+- **家长看板**：哪类题型最弱、这周比上周有没有进步、建议练什么；
 - **「挑战」难度**：内置题库目前只有基础/进阶，可补第三档（AI 生成已支持挑战）；
 - **按题型生成专项小练习**：错哪类就多练哪类；
-- **家长看板**：记录各题型正确率随时间的变化；
 - **GitHub Pages**：给孩子一个网址，平板/手机直接打开就玩；
 - **后端代理**：部署到公网、给多人用、又想藏住 API Key 时，需要加一个小代理（这是唯一需要"改造"的场景）；
 - **题库导入**：把真题题干（粘贴/CSV）批量转成游戏格式，接开源数据集（Ape210K 等）。

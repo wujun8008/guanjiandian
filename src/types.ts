@@ -94,18 +94,3 @@ export interface Evaluation {
   headline: string
   advice: string[]
 }
-
-/** 全局统计 */
-export interface Stats {
-  answered: number
-  correct: number
-  streak: number
-  bestStreak: number
-}
-
-export const emptyStats = (): Stats => ({
-  answered: 0,
-  correct: 0,
-  streak: 0,
-  bestStreak: 0,
-})
