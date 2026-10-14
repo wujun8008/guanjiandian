@@ -61,34 +61,45 @@ async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<st
   if (!cfg.apiKey.trim()) throw new Error('还没配置 API Key，请先点右上角「设置」。')
 
   const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions'
-  const body: Record<string, unknown> = {
+  const baseBody: Record<string, unknown> = {
     model: cfg.model,
     messages,
     temperature: opts.temperature ?? 0.7,
     stream: false,
   }
-  if (opts.json) body.response_format = { type: 'json_object' }
 
-  let res: Response
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey.trim()}`,
-      },
-      body: JSON.stringify(body),
-      signal: opts.signal,
-    })
-  } catch {
-    throw new Error('连不上 AI 服务，请检查网络和「设置」里的接口地址。')
+  const send = async (body: Record<string, unknown>): Promise<Response> => {
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cfg.apiKey.trim()}`,
+        },
+        body: JSON.stringify(body),
+        signal: opts.signal,
+      })
+    } catch {
+      throw new Error(
+        '连不上 AI 服务：请检查网络、接口地址，以及该服务商是否允许浏览器跨域调用（CORS）。',
+      )
+    }
+  }
+
+  let res = await send(
+    opts.json ? { ...baseBody, response_format: { type: 'json_object' } } : baseBody,
+  )
+
+  // 有些服务商不支持 response_format，遇到 400 就去掉再试一次
+  if (!res.ok && opts.json && res.status === 400) {
+    res = await send(baseBody)
   }
 
   if (!res.ok) {
     let detail = ''
     try {
       const err = await res.json()
-      detail = err?.error?.message ?? ''
+      detail = err?.error?.message ?? err?.message ?? ''
     } catch {
       /* ignore */
     }
@@ -99,6 +110,15 @@ async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<st
   const content: string = data?.choices?.[0]?.message?.content ?? ''
   if (!content) throw new Error('AI 没有返回内容，请重试。')
   return content
+}
+
+/** 测试连接：发一句最小请求，通了就返回模型回复 */
+export async function testConnection(signal?: AbortSignal): Promise<string> {
+  const content = await chat(
+    [{ role: 'user', content: '只回复两个字：可以' }],
+    { temperature: 0, signal },
+  )
+  return content.trim().slice(0, 40)
 }
 
 /** 从可能带 markdown 包裹的文本里，抠出第一个 JSON 对象 */

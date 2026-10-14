@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
-import { DEFAULT_AI_CONFIG, loadAIConfig, saveAIConfig } from '../lib/ai'
+import { Loader2, PlugZap, X } from 'lucide-react'
+import {
+  DEFAULT_AI_CONFIG,
+  loadAIConfig,
+  saveAIConfig,
+  testConnection,
+} from '../lib/ai'
 import type { AIConfig } from '../lib/ai'
 
 interface Props {
@@ -17,12 +22,18 @@ const PRESETS: { label: string; baseUrl: string; model: string }[] = [
   { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
 ]
 
-/** AI 设置：Base URL + API Key + 模型 */
+/** AI 设置：Base URL + API Key + 模型，含连接测试 */
 export default function Settings({ open, onClose, onSaved }: Props) {
   const [cfg, setCfg] = useState<AIConfig>(DEFAULT_AI_CONFIG)
+  const [testBusy, setTestBusy] = useState(false)
+  const [testOk, setTestOk] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open) setCfg(loadAIConfig())
+    if (open) {
+      setCfg(loadAIConfig())
+      setTestResult(null)
+    }
   }, [open])
 
   if (!open) return null
@@ -31,6 +42,22 @@ export default function Settings({ open, onClose, onSaved }: Props) {
     saveAIConfig(cfg)
     onSaved()
     onClose()
+  }
+
+  const runTest = async () => {
+    saveAIConfig(cfg) // 用当前填写的内容测
+    setTestBusy(true)
+    setTestResult(null)
+    try {
+      const reply = await testConnection()
+      setTestOk(true)
+      setTestResult(`连接成功，模型回复：${reply}`)
+    } catch (e) {
+      setTestOk(false)
+      setTestResult(e instanceof Error ? e.message : '连接失败')
+    } finally {
+      setTestBusy(false)
+    }
   }
 
   return (
@@ -93,6 +120,21 @@ export default function Settings({ open, onClose, onSaved }: Props) {
             spellCheck={false}
           />
         </label>
+
+        <div className="test-row">
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={runTest}
+            disabled={testBusy || !cfg.apiKey.trim()}
+          >
+            {testBusy ? <Loader2 size={14} className="spin" /> : <PlugZap size={14} />}
+            {testBusy ? '正在测试…' : '测试连接'}
+          </button>
+          {testResult && (
+            <span className={`test-result ${testOk ? 'ok' : 'no'}`}>{testResult}</span>
+          )}
+        </div>
 
         <div className="modal-actions">
           <button

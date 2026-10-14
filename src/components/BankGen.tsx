@@ -34,6 +34,7 @@ export default function BankGen({
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [doneMsg, setDoneMsg] = useState<string | null>(null)
+  const [firstErr, setFirstErr] = useState<string | null>(null)
   const cancelRef = useRef(false)
 
   const catList = useMemo(() => categoriesBySubject(subject), [subject])
@@ -47,6 +48,7 @@ export default function BankGen({
     setPer(1)
     setProgress({ done: 0, total: 0 })
     setDoneMsg(null)
+    setFirstErr(null)
     setRunning(false)
     cancelRef.current = false
   }, [open, defaultSubject])
@@ -98,26 +100,30 @@ export default function BankGen({
 
     setRunning(true)
     setDoneMsg(null)
+    setFirstErr(null)
     setProgress({ done: 0, total: tasks.length })
     cancelRef.current = false
 
     const collected: Question[] = []
     let errs = 0
+    let firstErrMsg: string | null = null
     for (let i = 0; i < tasks.length; i++) {
       if (cancelRef.current) break
       setProgress({ done: i, total: tasks.length })
       try {
         const q = await generateQuestion(subject, tasks[i].diff as 1 | 2 | 3, tasks[i].cat)
         collected.push(q)
-      } catch {
+      } catch (e) {
         errs++
+        if (!firstErrMsg) firstErrMsg = e instanceof Error ? e.message : String(e)
       }
     }
     setProgress({ done: tasks.length, total: tasks.length })
     if (collected.length) onGenerated(collected)
+    setFirstErr(firstErrMsg)
     setDoneMsg(
       `已生成 ${collected.length} 题` +
-        (errs ? `，${errs} 题失败（可再试）` : '') +
+        (errs ? `，${errs} 题失败` : '') +
         (cancelRef.current ? '（已停止）' : ''),
     )
     setRunning(false)
@@ -261,8 +267,15 @@ export default function BankGen({
 
         {!aiConfigured && <p className="gen-warn">还没接入 AI，请先在「设置」里填 API Key。</p>}
         {doneMsg && (
-          <p className="gen-done">
-            <Check size={14} /> {doneMsg}
+          <p className={`gen-done ${firstErr ? 'warn' : ''}`}>
+            {!firstErr && <Check size={14} />} {doneMsg}
+          </p>
+        )}
+        {firstErr && (
+          <p className="gen-err">
+            失败原因：{firstErr}
+            <br />
+            <span className="muted">可先去「设置」里点「测试连接」确认接口通不通。</span>
           </p>
         )}
 
