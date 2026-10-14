@@ -16,6 +16,7 @@ import { categoriesBySubject, categoryName } from './data/curriculum'
 import { tokenize } from './lib/tokenize'
 import { evaluate } from './lib/feedback'
 import { evaluateGroups } from './lib/groupFeedback'
+import { shuffleQuestion } from './lib/present'
 import { askTutor, explainMistake, generateQuestion, isAIConfigured } from './lib/ai'
 import { clearGenBank, loadGenBank, saveGenBank } from './lib/store'
 import {
@@ -119,7 +120,7 @@ export default function App() {
         map.set(key, shuffle(buildPool(s, cat, diff)))
       }
       const q = map.get(key)!.pop() ?? null
-      setQuestion(q)
+      setQuestion(q ? shuffleQuestion(q) : null)
       resetRound(q)
     },
     [buildPool, resetRound],
@@ -134,7 +135,7 @@ export default function App() {
         const cats = categoriesBySubject(s)
         const catId = cat !== 'all' ? cat : cats[Math.floor(Math.random() * cats.length)].id
         const q = await generateQuestion(s, d, catId)
-        setQuestion(q)
+        setQuestion(shuffleQuestion(q))
         resetRound(q)
       } catch (e) {
         setQError(e instanceof Error ? e.message : 'AI 出题失败，已改用内置题库。')
@@ -257,7 +258,7 @@ export default function App() {
       const ni = reviewIndex + 1
       if (ni < reviewQueue.length) {
         setReviewIndex(ni)
-        setQuestion(reviewQueue[ni])
+        setQuestion(shuffleQuestion(reviewQueue[ni]))
         resetRound(reviewQueue[ni])
       } else {
         exitReview()
@@ -274,7 +275,7 @@ export default function App() {
     setReviewQueue(q)
     setReviewIndex(0)
     setReviewing(true)
-    setQuestion(q[0])
+    setQuestion(shuffleQuestion(q[0]))
     resetRound(q[0])
     setMistakesOpen(false)
   }

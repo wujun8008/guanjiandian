@@ -159,7 +159,8 @@ function buildQuestionPrompt(subject: Subject, difficulty: 1 | 2 | 3, categoryId
 - 难度：${diffWord}
 - 形态：${form}（严格按规范里对应的输出格式）
 
-只输出符合规范的 JSON。`
+注意：正确答案的**内容和位置都要有变化**，不要老是同一个——比如句型题不要总是"存在句"，
+\`correct\` 的下标也不要固定。只输出符合规范的 JSON。`
 }
 
 function validateQuestion(

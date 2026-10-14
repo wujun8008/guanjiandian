@@ -142,6 +142,15 @@ docker-compose.yml       # 一键起容器
 
 > 注意：分组题的 `options` 和 `keywords` 都是空数组；进度记录里 `correct` 与 `mastered` 都取"全部组判断正确"。
 
+### 展示前打乱选项（`src/lib/present.ts`）
+
+题目在**展示时**会把选项顺序打乱（分组题连 `correct` / `notes` 一起重映射），
+避免"正确答案总在第一个"的位置惯性。**内置题库和 AI 出的题都别指望选项顺序**——
+所以写题时把正确项放在第一个也没关系，展示时会打乱。
+
+> 出题侧另有一层约束：`docs/出题规范.md` 里明确要求"答案要分散"，避免 AI 老是出同一个答案
+> （曾经踩过坑：规范示例里写了 `"correct": [2]`，模型照抄，导致句型题答案老是"存在句"）。
+
 ### AI（`src/lib/ai.ts`）
 
 OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
