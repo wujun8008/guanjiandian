@@ -18,6 +18,7 @@ export const CATEGORIES: Category[] = [
   { id: 'ma-danwei', subject: 'math', name: '单位换算', desc: '长度、质量、时间等单位的统一' },
   { id: 'ma-xingcheng', subject: 'math', name: '行程问题', desc: '速度、时间、路程的关系' },
   { id: 'ma-duobu', subject: 'math', name: '多步应用题', desc: '含"剩下""最多"等条件的多步题' },
+  { id: 'ma-zhishidian', subject: 'math', name: '选知识点', desc: '判断一道题用到了哪些知识点', mode: 'select' },
 
   /* ---------------------------- 英语 ---------------------------- */
   { id: 'en-yiwenci', subject: 'english', name: '疑问词理解', desc: 'Where / What / Who / How many…' },
@@ -25,6 +26,7 @@ export const CATEGORIES: Category[] = [
   { id: 'en-panduan', subject: 'english', name: '判断正误', desc: '按短文判断对错、改错' },
   { id: 'en-cixing', subject: 'english', name: '词形填空', desc: '用单词的正确形式填空' },
   { id: 'en-duihua', subject: 'english', name: '对话交际', desc: '选择应答、补全对话' },
+  { id: 'en-panju', subject: 'english', name: '判断句型', desc: '分析一句话的句型、时态、单复数', mode: 'select' },
 ]
 
 export function categoriesBySubject(subject: Subject): Category[] {

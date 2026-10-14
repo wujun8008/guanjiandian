@@ -1,4 +1,4 @@
-import type { Evaluation, Question } from '../types'
+import type { Question } from '../types'
 
 /**
  * 学习进度：按天记录 + 错题本 + 间隔重复（Leitner 盒子）。
@@ -121,21 +121,22 @@ export function dueMistakes(p: Progress, now = Date.now()): Mistake[] {
  * 记录一次作答，返回新的进度。
  * - 完全读对：若在错题本里，盒子 +1；过 MAX_BOX 即"已掌握"，移出错题本。
  * - 没完全读对：进错题本 / 归零到盒子 1。
+ * @param outcome correct=选对了核心判断；mastered=完全读对（会推进错题本）
  */
 export function applyAnswer(
   p: Progress,
   question: Question,
-  ev: Evaluation,
+  outcome: { correct: boolean; mastered: boolean },
   now = Date.now(),
 ): Progress {
-  const fullyCorrect = ev.optionCorrect && ev.missed.length === 0
+  const fullyCorrect = outcome.mastered
   const key = todayKey(new Date(now))
   const day = p.days[key] ?? { answered: 0, correct: 0, mastered: 0 }
   const days: Record<string, DayRecord> = {
     ...p.days,
     [key]: {
       answered: day.answered + 1,
-      correct: day.correct + (ev.optionCorrect ? 1 : 0),
+      correct: day.correct + (outcome.correct ? 1 : 0),
       mastered: day.mastered + (fullyCorrect ? 1 : 0),
     },
   }

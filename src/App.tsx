@@ -4,7 +4,9 @@ import Header from './components/Header'
 import FilterBar from './components/FilterBar'
 import StemCard from './components/StemCard'
 import Options from './components/Options'
+import GroupChooser from './components/GroupChooser'
 import Feedback from './components/Feedback'
+import GroupFeedback from './components/GroupFeedback'
 import ChatDock from './components/ChatDock'
 import Settings from './components/Settings'
 import BankGen from './components/BankGen'
@@ -13,6 +15,7 @@ import { bankBySubject, shuffle } from './data/questions'
 import { categoriesBySubject, categoryName } from './data/curriculum'
 import { tokenize } from './lib/tokenize'
 import { evaluate } from './lib/feedback'
+import { evaluateGroups } from './lib/groupFeedback'
 import { askTutor, explainMistake, generateQuestion, isAIConfigured } from './lib/ai'
 import { clearGenBank, loadGenBank, saveGenBank } from './lib/store'
 import {
@@ -27,7 +30,7 @@ import type { Progress } from './lib/progress'
 import type { ChatTurn } from './lib/ai'
 import { DIFFICULTY_LABEL } from './types'
 import type { CatStat } from './components/FilterBar'
-import type { Evaluation, Question, Subject } from './types'
+import type { Evaluation, GroupEvaluation, Question, Subject } from './types'
 
 const SUBJECT_LABEL: Record<Subject, string> = { chinese: '语文', math: '数学', english: '英语' }
 
@@ -39,8 +42,10 @@ export default function App() {
   const [question, setQuestion] = useState<Question | null>(null)
   const [selected, setSelected] = useState<Set<number>>(() => new Set())
   const [chosen, setChosen] = useState<number | null>(null)
+  const [groupSel, setGroupSel] = useState<Set<number>[]>([])
   const [submitted, setSubmitted] = useState(false)
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null)
+  const [groupEval, setGroupEval] = useState<GroupEvaluation | null>(null)
   const [catStats, setCatStats] = useState<Record<string, CatStat>>({})
 
   const [loadingQ, setLoadingQ] = useState(false)
@@ -72,8 +77,10 @@ export default function App() {
     queues.current.clear()
   }, [genBank])
 
+  const isGroup = !!question?.groups?.length
+
   const tokens = useMemo(
-    () => (question ? tokenize(question.stem, question.keywords) : []),
+    () => (question && !question.groups?.length ? tokenize(question.stem, question.keywords) : []),
     [question],
   )
 
@@ -87,11 +94,13 @@ export default function App() {
   const todayAnswered = progress.days[todayKey()]?.answered ?? 0
   const dayStreak = useMemo(() => computeStreak(progress.days), [progress.days])
 
-  const resetRound = useCallback(() => {
+  const resetRound = useCallback((q: Question | null) => {
     setSelected(new Set())
     setChosen(null)
+    setGroupSel(q?.groups ? q.groups.map(() => new Set<number>()) : [])
     setSubmitted(false)
     setEvaluation(null)
+    setGroupEval(null)
     setAiText(null)
   }, [])
 
@@ -109,8 +118,9 @@ export default function App() {
       if (!map.has(key) || map.get(key)!.length === 0) {
         map.set(key, shuffle(buildPool(s, cat, diff)))
       }
-      setQuestion(map.get(key)!.pop() ?? null)
-      resetRound()
+      const q = map.get(key)!.pop() ?? null
+      setQuestion(q)
+      resetRound(q)
     },
     [buildPool, resetRound],
   )
@@ -125,7 +135,7 @@ export default function App() {
         const catId = cat !== 'all' ? cat : cats[Math.floor(Math.random() * cats.length)].id
         const q = await generateQuestion(s, d, catId)
         setQuestion(q)
-        resetRound()
+        resetRound(q)
       } catch (e) {
         setQError(e instanceof Error ? e.message : 'AI 出题失败，已改用内置题库。')
         loadFromBank(s, cat, diff)
@@ -172,17 +182,62 @@ export default function App() {
     })
   }
 
+  const toggleGroup = (gi: number, oi: number) => {
+    if (submitted) return
+    setGroupSel((prev) => {
+      const g = question?.groups?.[gi]
+      if (!g) return prev
+      const next = prev.map((s) => new Set(s))
+      if (!next[gi]) next[gi] = new Set<number>()
+      if (g.multiple) {
+        if (next[gi].has(oi)) next[gi].delete(oi)
+        else next[gi].add(oi)
+      } else {
+        next[gi] = new Set([oi])
+      }
+      return next
+    })
+  }
+
   const choose = (i: number) => {
     if (!submitted) setChosen(i)
   }
 
+  const canSubmit = isGroup
+    ? groupSel.length === (question?.groups?.length ?? 0) && groupSel.every((s) => s.size > 0)
+    : chosen !== null
+
   const submit = () => {
-    if (!question || chosen === null || submitted) return
+    if (!question || submitted || !canSubmit) return
+    setSubmitted(true)
+
+    if (question.groups?.length) {
+      const gev = evaluateGroups(question, groupSel)
+      setGroupEval(gev)
+      setProgress((prev) => {
+        const next = applyAnswer(prev, question, {
+          correct: gev.allCorrect,
+          mastered: gev.allCorrect,
+        })
+        saveProgress(next)
+        return next
+      })
+      setCatStats((prev) => {
+        const cur = prev[question.category] ?? { a: 0, c: 0 }
+        return {
+          ...prev,
+          [question.category]: { a: cur.a + 1, c: cur.c + (gev.allCorrect ? 1 : 0) },
+        }
+      })
+      return
+    }
+
+    if (chosen === null) return
     const ev = evaluate(question, tokens, selected, chosen)
     setEvaluation(ev)
-    setSubmitted(true)
+    const mastered = ev.optionCorrect && ev.missed.length === 0
     setProgress((prev) => {
-      const next = applyAnswer(prev, question, ev)
+      const next = applyAnswer(prev, question, { correct: ev.optionCorrect, mastered })
       saveProgress(next)
       return next
     })
@@ -195,7 +250,7 @@ export default function App() {
     })
   }
 
-  const retry = () => resetRound()
+  const retry = () => resetRound(question)
 
   const next = () => {
     if (reviewing) {
@@ -203,7 +258,7 @@ export default function App() {
       if (ni < reviewQueue.length) {
         setReviewIndex(ni)
         setQuestion(reviewQueue[ni])
-        resetRound()
+        resetRound(reviewQueue[ni])
       } else {
         exitReview()
       }
@@ -220,7 +275,7 @@ export default function App() {
     setReviewIndex(0)
     setReviewing(true)
     setQuestion(q[0])
-    resetRound()
+    resetRound(q[0])
     setMistakesOpen(false)
   }
 
@@ -244,19 +299,26 @@ export default function App() {
   }
 
   const askAI = async () => {
-    if (!question || !evaluation) return
+    if (!question || !submitted) return
     if (!isAIConfigured()) {
       setSettingsOpen(true)
       return
     }
+    let detail = ''
+    if (question.groups?.length && groupEval) {
+      detail = groupEval.groups
+        .filter((g) => !g.correct)
+        .map((g) => `${g.label}判断有误（正确答案：${g.answer.join('、')}）`)
+        .join('；')
+      if (!detail) detail = '全部判断正确'
+    } else if (evaluation) {
+      const missed = evaluation.missed.map((m) => m.text).join('、')
+      const picked = chosen !== null ? question.options[chosen]?.text : ''
+      detail = `漏掉的关键信息：${missed || '（无）'}；选的意思：${picked}`
+    }
     setAiBusy(true)
     try {
-      const chosenText = chosen !== null ? question.options[chosen].text : ''
-      const text = await explainMistake(
-        question,
-        evaluation.missed.map((m) => m.text),
-        chosenText,
-      )
+      const text = await explainMistake(question, detail)
       setAiText(text)
     } catch (e) {
       setAiText(e instanceof Error ? e.message : 'AI 暂时联系不上，请稍后再试。')
@@ -328,7 +390,9 @@ export default function App() {
                   </button>
                 </span>
               ) : (
-                <span className="sheet-step">① 划重点　② 选意思</span>
+                <span className="sheet-step">
+                  {isGroup ? '读一读，选出正确的判断' : '① 划重点　② 选意思'}
+                </span>
               )}
             </div>
 
@@ -337,14 +401,25 @@ export default function App() {
               selected={selected}
               submitted={submitted}
               onToggle={toggleToken}
+              plainText={isGroup ? question.stem : undefined}
+              hint={isGroup ? '读一读，再从下面选出正确的判断。' : undefined}
             />
 
-            <Options
-              options={question.options}
-              chosen={chosen}
-              submitted={submitted}
-              onChoose={choose}
-            />
+            {isGroup ? (
+              <GroupChooser
+                groups={question.groups!}
+                selections={groupSel}
+                submitted={submitted}
+                onToggle={toggleGroup}
+              />
+            ) : (
+              <Options
+                options={question.options}
+                chosen={chosen}
+                submitted={submitted}
+                onChoose={choose}
+              />
+            )}
 
             <div className="actions">
               {!submitted ? (
@@ -353,7 +428,7 @@ export default function App() {
                     type="button"
                     className="btn primary big"
                     onClick={submit}
-                    disabled={chosen === null || loadingQ}
+                    disabled={!canSubmit || loadingQ}
                   >
                     我读懂了，看结果
                   </button>
@@ -390,7 +465,17 @@ export default function App() {
             )}
             {qError && <p className="qerror">{qError}</p>}
 
-            {submitted && evaluation && (
+            {submitted && isGroup && groupEval && (
+              <GroupFeedback
+                evaluation={groupEval}
+                question={question}
+                aiConfigured={aiOn}
+                aiText={aiText}
+                aiBusy={aiBusy}
+                onAskAI={askAI}
+              />
+            )}
+            {submitted && !isGroup && evaluation && (
               <Feedback
                 evaluation={evaluation}
                 question={question}

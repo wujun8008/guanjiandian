@@ -47,6 +47,21 @@ export interface Category {
   name: string
   /** 一句话说明这个题型在考什么 */
   desc: string
+  /** 作答模式：缺省为「核心意思 4 选 1」；'select' 为「分组选择」 */
+  mode?: 'select'
+}
+
+/** 分组选择里的一组（如「用到的知识点」「句型」） */
+export interface SelectGroup {
+  /** 组名 */
+  label: string
+  /** 是否多选（true=多选，false=单选） */
+  multiple: boolean
+  options: string[]
+  /** 正确选项下标 */
+  correct: number[]
+  /** 每个选项的解析（可选，长度同 options） */
+  notes?: string[]
 }
 
 /** 一道题 */
@@ -61,8 +76,10 @@ export interface Question {
   /** 题干原文。关键词通过 indexOf 在其中定位 */
   stem: string
   keywords: Keyword[]
-  /** 4 个选项，恰好 1 个 correct: true */
+  /** 4 个选项，恰好 1 个 correct: true（分组题可为空） */
   options: Option[]
+  /** 分组选择模式（选知识点 / 判断句型）。有则用它，不再走「点关键词 + 4 选 1」 */
+  groups?: SelectGroup[]
   /** 一句话解题提示 */
   tip: string
   /** 来源：内置题库 or AI 实时生成 */
@@ -91,6 +108,26 @@ export interface Evaluation {
   hit: number
   totalKeys: number
   level: 'perfect' | 'good' | 'partial' | 'poor'
+  headline: string
+  advice: string[]
+}
+
+/** 分组选择中，某一组的批改结果 */
+export interface GroupResult {
+  label: string
+  correct: boolean
+  /** 漏选的正确项文字 */
+  missed: string[]
+  /** 误选项文字 */
+  wrong: string[]
+  /** 正确答案文字 */
+  answer: string[]
+}
+
+/** 分组选择题的批改结果 */
+export interface GroupEvaluation {
+  allCorrect: boolean
+  groups: GroupResult[]
   headline: string
   advice: string[]
 }

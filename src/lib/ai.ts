@@ -131,11 +131,13 @@ ${SPEC}`
 function buildQuestionPrompt(subject: Subject, difficulty: 1 | 2 | 3, categoryId?: string): string {
   const diffWord = { 1: '基础', 2: '进阶', 3: '挑战' }[difficulty]
   const cat = categoryId ? CATEGORIES.find((c) => c.id === categoryId) : undefined
+  const form = cat?.mode === 'select' ? '分组题' : '普通题'
   return `请按上面的《出题规范》，出一道读题训练题：
 
 - 学科：${SUBJECT_LABEL[subject]}
 - 题型：${cat ? `${cat.name}（${cat.desc}）` : '综合'}
 - 难度：${diffWord}
+- 形态：${form}（严格按规范里对应的输出格式）
 
 只输出符合规范的 JSON。`
 }
@@ -147,7 +149,44 @@ function validateQuestion(
   categoryId: string,
 ): Question {
   const q = raw as Partial<Question>
-  if (!q || typeof q.stem !== 'string' || !Array.isArray(q.keywords) || !Array.isArray(q.options)) {
+  if (!q || typeof q.stem !== 'string') throw new Error('AI 出的题格式不对，请重试。')
+
+  const id = `ai-${subject}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+  // 分组题
+  if (Array.isArray(q.groups) && q.groups.length) {
+    const groups = q.groups
+      .filter(
+        (g) => g && Array.isArray(g.options) && g.options.length >= 2 && Array.isArray(g.correct),
+      )
+      .map((g) => ({
+        label: String(g.label ?? ''),
+        multiple: !!g.multiple,
+        options: g.options.map((o) => String(o)),
+        correct: g.correct.filter(
+          (i) => Number.isInteger(i) && i >= 0 && i < g.options.length,
+        ),
+        notes: Array.isArray(g.notes) ? g.notes.map((n) => String(n)) : undefined,
+      }))
+      .filter((g) => g.correct.length > 0 && (g.multiple || g.correct.length === 1))
+    if (!groups.length) throw new Error('AI 出的分组题格式不对，请重试。')
+    return {
+      id,
+      subject,
+      category: categoryId,
+      grade: '四-六年级',
+      difficulty,
+      stem: q.stem,
+      keywords: [],
+      options: [],
+      groups,
+      tip: q.tip ?? '',
+      source: 'ai',
+    }
+  }
+
+  // 普通题
+  if (!Array.isArray(q.keywords) || !Array.isArray(q.options)) {
     throw new Error('AI 出的题格式不对，请重试。')
   }
   const options = q.options.filter((o) => o && typeof o.text === 'string')
@@ -156,7 +195,7 @@ function validateQuestion(
   if (correctCount !== 1) throw new Error('AI 出的题正确答案不唯一，请重试。')
 
   return {
-    id: `ai-${subject}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id,
     subject,
     category: categoryId,
     grade: '四-六年级',
@@ -225,19 +264,17 @@ export async function askTutor(
   return chat(messages, { temperature: 0.6, signal })
 }
 
-/** 让 AI 针对孩子这次的错误，讲一段个性化点评 */
+/** 让 AI 针对孩子这次的作答，讲一段个性化点评 */
 export async function explainMistake(
   question: Question,
-  missedTexts: string[],
-  chosenOption: string,
+  detail: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const sys = `你是小学老师，针对孩子的一次读题作答给出简短点评和鼓励，60~100 字，简体中文，口语化。`
+  const sys = `你是小学老师，针对孩子的一次作答给出简短点评和鼓励，60~100 字，简体中文，口语化。`
   const prompt = `题目：${question.stem}
-正确核心意思：${question.options.find((o) => o.correct)?.text}
-孩子漏掉的关键信息：${missedTexts.join('、') || '（无）'}
-孩子误选的意思：${chosenOption}
-请用两三句话点评：孩子这次读题的问题出在哪，下次怎么注意，最后给一句鼓励。`
+${question.tip ? `（本题提示：${question.tip}）` : ''}
+孩子这次的作答情况：${detail || '（基本读对）'}
+请用两三句话点评：孩子这次的问题出在哪，下次怎么注意，最后给一句鼓励。`
   return chat(
     [
       { role: 'system', content: sys },
