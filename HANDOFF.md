@@ -169,6 +169,10 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
 一键让 AI 批量出题，带进度条，可中途停止。生成的题存在浏览器 `localStorage`
 （键 `guanjiandian.bank.v1`），和内置题库**合并**后一起参与出题与筛选。
 
+**批量出题（`generateQuestionSet`）**：一次请求里把整份清单说清楚（可混合题型/难度），
+一次拿回多道。因为模型单次输出长度有限，一批最多 **6 道**（`MAX_BATCH`），
+超过就切成多批、**并发 3 条**（`CONCURRENCY`）并行跑——比"一题一次调用"快数倍。
+
 出题依据是 **`docs/出题规范.md`** —— 它通过 Vite 的 `?raw` 在**构建时**打进产物，
 作为 `ai.ts` 里出题 system prompt 的一部分。**要改 AI 出题风格，就改这个 md**（改完需重新构建）。
 

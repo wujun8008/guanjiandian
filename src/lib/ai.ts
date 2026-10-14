@@ -131,6 +131,23 @@ function extractJSON<T>(text: string): T {
   return JSON.parse(candidate.slice(start, end + 1)) as T
 }
 
+/** 抠出第一个 JSON 值（对象或数组都行） */
+function extractJSONAny(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = (fenced ? fenced[1] : text).trim()
+  const arrStart = candidate.indexOf('[')
+  const objStart = candidate.indexOf('{')
+  if (arrStart >= 0 && (objStart < 0 || arrStart < objStart)) {
+    const end = candidate.lastIndexOf(']')
+    if (end > arrStart) return JSON.parse(candidate.slice(arrStart, end + 1))
+  }
+  if (objStart >= 0) {
+    const end = candidate.lastIndexOf('}')
+    if (end > objStart) return JSON.parse(candidate.slice(objStart, end + 1))
+  }
+  throw new Error('AI 返回的不是有效题目，请重试。')
+}
+
 /* ------------------------------------------------------------------ *
  * 实时出题 —— 严格按项目《出题规范》（docs/出题规范.md）
  * ------------------------------------------------------------------ */
@@ -207,6 +224,9 @@ function validateQuestion(
   }
 
   // 普通题
+  if (CATEGORIES.find((c) => c.id === categoryId)?.mode === 'select') {
+    throw new Error('AI 没按分组格式出题，请重试。')
+  }
   if (!Array.isArray(q.keywords) || !Array.isArray(q.options)) {
     throw new Error('AI 出的题格式不对，请重试。')
   }
@@ -250,6 +270,86 @@ export async function generateQuestion(
     { json: true, temperature: 0.9, signal },
   )
   return validateQuestion(extractJSON(content), subject, difficulty, categoryId)
+}
+
+/* ------------------------------------------------------------------ *
+ * 批量出题：一次请求里把清单都说清楚，一次拿回多道
+ * ------------------------------------------------------------------ */
+
+const DIFF_WORD: Record<number, string> = { 1: '基础', 2: '进阶', 3: '挑战' }
+
+export interface GenSpec {
+  category: string
+  difficulty: 1 | 2 | 3
+  count: number
+}
+
+function buildSetPrompt(subject: Subject, specs: GenSpec[], total: number): string {
+  const lines = specs.map((s) => {
+    const cat = CATEGORIES.find((c) => c.id === s.category)
+    return `- ${cat ? `${cat.name}（id: ${cat.id}）` : '综合'} · ${DIFF_WORD[s.difficulty]} × ${s.count} 道`
+  })
+  return `请按上面的《出题规范》，一次性出 ${total} 道**互不相同**的读题训练题（学科：${SUBJECT_LABEL[subject]}）。清单：
+
+${lines.join('\n')}
+
+要求：
+- 每道题在 JSON 里额外带上 "category"（题型 id，照抄上面括号里的 id）和 "difficulty"（1=基础 / 2=进阶 / 3=挑战）；
+- 严格按每项对应的**形态**输出：「选知识点」「判断句型」用分组格式，其余用普通格式；
+- 正确答案的内容和位置都要有变化，不要老是同一个；
+- 这 ${total} 道题彼此不要重复。
+
+输出：{ "questions": [ 第 1 题, 第 2 题, ... ] }，只输出 JSON。`
+}
+
+/**
+ * 一次调用生成一批题（可混合题型/难度）。
+ * 模型若少给或给错，只保留合格的；数量不足时调用方按"部分失败"处理。
+ */
+export async function generateQuestionSet(
+  subject: Subject,
+  specs: GenSpec[],
+  signal?: AbortSignal,
+): Promise<Question[]> {
+  const total = specs.reduce((n, s) => n + s.count, 0)
+  if (total <= 0) return []
+  if (total === 1) return [await generateQuestion(subject, specs[0].difficulty, specs[0].category, signal)]
+
+  const allowed = new Map<string, Set<number>>()
+  for (const s of specs) {
+    const set = allowed.get(s.category) ?? new Set<number>()
+    set.add(s.difficulty)
+    allowed.set(s.category, set)
+  }
+
+  const content = await chat(
+    [
+      { role: 'system', content: QUESTION_SYSTEM },
+      { role: 'user', content: buildSetPrompt(subject, specs, total) },
+    ],
+    { json: true, temperature: 0.95, signal },
+  )
+
+  const parsed = extractJSONAny(content)
+  const rawItems: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as { questions?: unknown[] }).questions)
+      ? (parsed as { questions: unknown[] }).questions
+      : [parsed]
+
+  const out: Question[] = []
+  for (const item of rawItems) {
+    const it = item as { category?: unknown; difficulty?: unknown }
+    const cat = typeof it.category === 'string' ? it.category : specs[0].category
+    const diff = (Number(it.difficulty) || specs[0].difficulty) as 1 | 2 | 3
+    if (!allowed.get(cat)?.has(diff)) continue // 不在清单里的，丢掉
+    try {
+      out.push(validateQuestion(item, subject, diff, cat))
+    } catch {
+      /* 单题不合格就跳过 */
+    }
+  }
+  return out
 }
 
 /* ------------------------------------------------------------------ *

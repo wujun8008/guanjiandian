@@ -1,9 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, Sparkles, Trash2, X } from 'lucide-react'
 import { categoriesBySubject } from '../data/curriculum'
-import { generateQuestion } from '../lib/ai'
+import { generateQuestionSet } from '../lib/ai'
+import type { GenSpec } from '../lib/ai'
 import { DIFFICULTY_LABEL, SUBJECTS } from '../types'
 import type { Question, Subject } from '../types'
+
+/** 一次请求最多出几道（太多会被模型的输出长度截断） */
+const MAX_BATCH = 6
+/** 同时跑几条请求 */
+const CONCURRENCY = 3
+
+/** 把清单切成每批不超过 max 道 */
+function chunkSpecs(specs: GenSpec[], max: number): GenSpec[][] {
+  const chunks: GenSpec[][] = []
+  let cur: GenSpec[] = []
+  let n = 0
+  for (const s of specs) {
+    let rest = s.count
+    while (rest > 0) {
+      const take = Math.min(rest, max - n)
+      cur.push({ ...s, count: take })
+      n += take
+      rest -= take
+      if (n >= max) {
+        chunks.push(cur)
+        cur = []
+        n = 0
+      }
+    }
+  }
+  if (cur.length) chunks.push(cur)
+  return chunks
+}
 
 interface Props {
   open: boolean
@@ -77,17 +106,20 @@ export default function BankGen({
       return next
     })
 
-  const tasks = useMemo(() => {
-    const list: { cat: string; diff: number }[] = []
+  const specs = useMemo<GenSpec[]>(() => {
+    const list: GenSpec[] = []
     for (const c of catList) {
       if (!cats.has(c.id)) continue
       for (const d of [1, 2, 3]) {
         if (!diffs.has(d)) continue
-        for (let i = 0; i < per; i++) list.push({ cat: c.id, diff: d })
+        list.push({ category: c.id, difficulty: d as 1 | 2 | 3, count: per })
       }
     }
     return list
   }, [catList, cats, diffs, per])
+
+  const total = useMemo(() => specs.reduce((n, s) => n + s.count, 0), [specs])
+  const callCount = useMemo(() => chunkSpecs(specs, MAX_BATCH).length, [specs])
 
   if (!open) return null
 
@@ -96,40 +128,56 @@ export default function BankGen({
       onOpenSettings()
       return
     }
-    if (running || tasks.length === 0) return
+    if (running || total === 0) return
 
     setRunning(true)
     setDoneMsg(null)
     setFirstErr(null)
-    setProgress({ done: 0, total: tasks.length })
+    setProgress({ done: 0, total })
     cancelRef.current = false
 
+    const chunks = chunkSpecs(specs, MAX_BATCH)
+    const queue = [...chunks]
     const collected: Question[] = []
     let errs = 0
     let firstErrMsg: string | null = null
-    for (let i = 0; i < tasks.length; i++) {
-      if (cancelRef.current) break
-      setProgress({ done: i, total: tasks.length })
-      try {
-        const q = await generateQuestion(subject, tasks[i].diff as 1 | 2 | 3, tasks[i].cat)
-        collected.push(q)
-      } catch (e) {
-        errs++
-        if (!firstErrMsg) firstErrMsg = e instanceof Error ? e.message : String(e)
+    let done = 0
+
+    const worker = async () => {
+      while (queue.length) {
+        if (cancelRef.current) return
+        const chunk = queue.shift()!
+        const n = chunk.reduce((a, s) => a + s.count, 0)
+        try {
+          const qs = await generateQuestionSet(subject, chunk)
+          collected.push(...qs)
+          if (qs.length < n) errs += n - qs.length
+        } catch (e) {
+          errs += n
+          if (!firstErrMsg) firstErrMsg = e instanceof Error ? e.message : String(e)
+        } finally {
+          done += n
+          setProgress({ done: Math.min(done, total), total })
+        }
       }
     }
-    setProgress({ done: tasks.length, total: tasks.length })
+
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, () => worker()),
+    )
+
+    setProgress({ done: total, total })
     if (collected.length) onGenerated(collected)
     setFirstErr(firstErrMsg)
     setDoneMsg(
       `已生成 ${collected.length} 题` +
-        (errs ? `，${errs} 题失败` : '') +
+        (errs ? `，${errs} 题没拿到` : '') +
         (cancelRef.current ? '（已停止）' : ''),
     )
     setRunning(false)
   }
 
-  const tooMany = tasks.length > 60
+  const tooMany = total > 60
 
   return (
     <div className="modal-mask" onClick={running ? undefined : onClose}>
@@ -224,8 +272,10 @@ export default function BankGen({
         </div>
 
         <div className="gen-summary">
-          将生成 <b>{tasks.length}</b> 题
-          <span className="muted">（{tasks.length} 次 AI 调用）</span>
+          将生成 <b>{total}</b> 题
+          <span className="muted">
+            （约 {callCount} 次请求，{Math.min(CONCURRENCY, callCount)} 条并行）
+          </span>
           {tooMany && <span className="gen-warn"> — 有点多，建议一次别超过 60 题</span>}
         </div>
 
@@ -258,7 +308,7 @@ export default function BankGen({
               type="button"
               className="btn primary"
               onClick={start}
-              disabled={tasks.length === 0 || !aiConfigured}
+              disabled={total === 0 || !aiConfigured}
             >
               <Sparkles size={16} /> 开始生成
             </button>
