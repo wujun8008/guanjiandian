@@ -160,6 +160,7 @@ docker-compose.yml       # 一键起容器
 
 ## 说明
 
+- 想换个环境接着开发：见 **[HANDOFF.md](HANDOFF.md)** —— 开发纪要，含决策、现状、约定与待办。
 - 设计隐喻：**作业纸 + 荧光笔**。点词 = 划荧光笔（带从左到右的书写动画），批改用红笔、正确用绿笔。
 - 无障碍：按钮有 `aria-pressed`、键盘可见焦点，尊重 `prefers-reduced-motion`。
 - 字体：中文走系统字体栈（PingFang / 微软雅黑 / Noto Sans SC），数字用 Fraunces；无网络时自动回退，不影响使用。
