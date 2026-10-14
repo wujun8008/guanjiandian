@@ -1,0 +1,8 @@
+services:
+  guanjiandian:
+    build: .
+    image: guanjiandian:latest
+    container_name: guanjiandian
+    ports:
+      - "8080:80"
+    restart: unless-stopped

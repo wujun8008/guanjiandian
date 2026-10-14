@@ -1,0 +1,12 @@
+# 构建镜像时不需要打进构建上下文的东西
+node_modules
+dist
+dist-verify
+.git
+.gitignore
+*.log
+.DS_Store
+
+# 文档与打包好的单文件版：镜像里不需要（镜像由源码重新构建）
+docs
+关键点.html

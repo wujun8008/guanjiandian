@@ -66,6 +66,30 @@ pnpm typecheck      # 只做类型检查
 
 ---
 
+## 用 Docker 部署
+
+纯前端静态站点，**不需要改任何代码**。仓库里已经带了 `Dockerfile` / `nginx.conf` / `docker-compose.yml`。
+
+```bash
+# 方式一：compose（推荐）
+docker compose up -d --build        # 打开 http://localhost:8080
+
+# 方式二：手动
+docker build -t guanjiandian .
+docker run -d -p 8080:80 --name guanjiandian guanjiandian
+```
+
+镜像分两阶段构建：先用 `node:22-alpine` 跑 `npm install && npm run build` 得到 `dist/`，
+再把 `dist/` 拷进 `nginx:alpine` 托管，最终镜像很小（只有 nginx + 几百 KB 静态文件）。
+
+**关于 AI 和 API Key**：AI 调用是**浏览器直接发给服务商**的（Key 存在每个访问者自己的浏览器里），
+所以容器里**不需要配任何环境变量**，这对"自己家里用"完全够用。
+
+> 如果你要**部署到公网、给很多人用、又不想让每个人各填各的 Key**，那才需要改造：
+> 加一个很小的后端代理，把 Key 放在服务端、由它转发请求。需要的话可以再加。
+
+---
+
 ## 接入 AI（可选，但推荐）
 
 不接 AI 也能玩：内置了 9 道示例题（语数外各 3 道）作为兜底。
@@ -109,6 +133,9 @@ src/
     Feedback.tsx         # 批改结果与建议
     ChatDock.tsx         # 底部「问问 AI 老师」抽屉
     Settings.tsx         # AI 设置弹窗
+Dockerfile               # 多阶段构建（node 构建 → nginx 托管）
+nginx.conf               # 静态站点配置（gzip / 缓存 / SPA 回退）
+docker-compose.yml       # 一键起容器
 ```
 
 ---
