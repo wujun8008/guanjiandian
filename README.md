@@ -111,6 +111,23 @@ docker run -d -p 8080:80 --name guanjiandian guanjiandian
 
 ---
 
+## 生成题库（用 AI 扩充题库）
+
+配好 AI 之后，右上角会出现一个**「生成题库」**按钮（数据库图标）。点开可以：
+
+- 选 **学科**、**题型**（可多选）、**难度**（可多选）、**每个组合生成几题**；
+- 一键让 AI **按项目的《出题规范》** 批量出题，带进度条；
+- 生成的题存在**本机浏览器**里，和内置题库**合并**，一起参与专项训练与难度筛选；
+- 随时可「清空生成的题库」。
+
+出题依据是 **`docs/出题规范.md`**（题型体系、难度定义、每道题必须包含的字段、输出格式）。
+**想调整 AI 的出题风格，直接改这个文件**即可——注意它是在**构建时**打进产物的，改完要重新
+`pnpm build`（或重新生成 `关键点.html`）。
+
+> 生成的题属于"你自己的题"，没有版权顾虑；相比从试卷站抓真题，这是最快也最省心的扩充方式。
+
+---
+
 ## 目录结构
 
 ```
@@ -125,14 +142,17 @@ src/
     tokenize.ts          # 把题干按关键词锚点切成可点击片段
     feedback.ts          # 批改引擎：判定对错、生成针对性建议
     ai.ts                # OpenAI 兼容客户端：出题 / 陪读问答 / 个性化点评
+    store.ts             # 生成题库的本地存储（localStorage）
   components/
-    Header.tsx           # 顶栏：品牌、学科切换、统计、设置
+    Header.tsx           # 顶栏：品牌、学科切换、统计、生成题库、设置
     FilterBar.tsx        # 专项训练（题型）+ 难度筛选
     StemCard.tsx         # 题干 + 荧光笔划重点
     Options.tsx          # 核心意思 4 选 1
     Feedback.tsx         # 批改结果与建议
     ChatDock.tsx         # 底部「问问 AI 老师」抽屉
     Settings.tsx         # AI 设置弹窗
+    BankGen.tsx          # 生成题库弹窗
+docs/出题规范.md          # AI 出题的规范（构建时打进产物）
 Dockerfile               # 多阶段构建（node 构建 → nginx 托管）
 nginx.conf               # 静态站点配置（gzip / 缓存 / SPA 回退）
 docker-compose.yml       # 一键起容器

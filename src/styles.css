@@ -950,6 +950,102 @@ button {
   margin-top: 8px;
 }
 
+/* --------------------------- 生成题库 --------------------------- */
+.modal.wide {
+  width: min(620px, 100%);
+}
+.modal-note code {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 5px;
+  font-size: 12.5px;
+}
+.gen-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 11px;
+}
+.gen-label {
+  flex-shrink: 0;
+  width: 56px;
+  padding-top: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.gen-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gen-summary {
+  margin: 14px 0 12px;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 13px;
+}
+.gen-summary b {
+  font-family: var(--font-num);
+  font-size: 17px;
+  color: var(--brand);
+  margin: 0 2px;
+}
+.gen-warn {
+  color: var(--mid);
+  font-size: 13px;
+}
+.gen-progress {
+  margin: 4px 0 8px;
+}
+.gen-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.gen-bar-fill {
+  height: 100%;
+  background: var(--brand-2);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.gen-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.gen-progress-row .loading {
+  margin: 0;
+}
+.gen-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--ok);
+}
+.gen-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px dashed var(--line);
+}
+.btn.small {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
 /* ------------------------------ 动效 ------------------------------ */
 @keyframes rise {
   from {

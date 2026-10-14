@@ -1,5 +1,6 @@
 import type { Question, Subject } from '../types'
 import { CATEGORIES } from '../data/curriculum'
+import SPEC from '../../docs/出题规范.md?raw'
 
 /* ------------------------------------------------------------------ *
  * 配置：Base URL + API Key + 模型，存在浏览器 localStorage 里。
@@ -111,7 +112,7 @@ function extractJSON<T>(text: string): T {
 }
 
 /* ------------------------------------------------------------------ *
- * 实时出题
+ * 实时出题 —— 严格按项目《出题规范》（docs/出题规范.md）
  * ------------------------------------------------------------------ */
 
 const SUBJECT_LABEL: Record<Subject, string> = {
@@ -122,28 +123,21 @@ const SUBJECT_LABEL: Record<Subject, string> = {
 
 const QUESTION_SYSTEM = `你是一位中国小学的资深老师，专门训练学生"读懂题目"的能力。
 你出的题只考察一件事：学生能否抓住题干里的关键信息，并说清这道题到底在问什么。
-只输出 JSON，不要任何解释文字。`
+
+下面是本项目的《出题规范》，请严格遵守，只输出 JSON，不要任何多余文字：
+
+${SPEC}`
 
 function buildQuestionPrompt(subject: Subject, difficulty: 1 | 2 | 3, categoryId?: string): string {
   const diffWord = { 1: '基础', 2: '进阶', 3: '挑战' }[difficulty]
   const cat = categoryId ? CATEGORIES.find((c) => c.id === categoryId) : undefined
-  const catLine = cat
-    ? `\n本题型必须是「${cat.name}」——${cat.desc}。请出符合这个题型的题。`
-    : ''
-  return `请出一道${SUBJECT_LABEL[subject]}的读题训练题，面向小学四到六年级，难度为「${diffWord}」。${catLine}
+  return `请按上面的《出题规范》，出一道读题训练题：
 
-要求：
-1. stem：题目原文（题干本身，一段话，20~60 字）。学科不同形态不同：
-   - 语文：如"用简洁的语言概括第三自然段的主要内容"这类题干；
-   - 数学：一道应用题题干（含数据、单位、条件、问题）；
-   - 英语：如"根据对话选择正确答案：Where is the library?"这类题干（可中英混排）。
-2. keywords：题干中的关键信息，3~5 处。每一项 { "text": "题干中原文片段（必须与 stem 逐字一致）", "reason": "为什么它是关键信息（讲给孩子听，20 字内）", "role": 从 task/object/data/condition/target/trap 中选一个 }。
-   - task=要求做什么；object=对象/范围；data=数据单位；condition=限制条件；target=最终要问的；trap=易漏的陷阱词。
-3. options：4 个"这道题在问什么"的说法，恰好 1 个正确、3 个是**近似干扰项**。干扰项要对应常见读题错误（看错范围、答非所问、只答一半、混淆概念）。每一项 { "text": "...", "correct": true/false, "analysis": "为什么对/错，指出错在哪种读题毛病（30 字内）" }。
-4. tip：一句话解题提示（30 字内）。
+- 学科：${SUBJECT_LABEL[subject]}
+- 题型：${cat ? `${cat.name}（${cat.desc}）` : '综合'}
+- 难度：${diffWord}
 
-严格按此 JSON 结构输出：
-{"stem":"","keywords":[{"text":"","reason":"","role":"task"}],"options":[{"text":"","correct":true,"analysis":""},{"text":"","correct":false,"analysis":""},{"text":"","correct":false,"analysis":""},{"text":"","correct":false,"analysis":""}],"tip":""}`
+只输出符合规范的 JSON。`
 }
 
 function validateQuestion(
@@ -162,7 +156,7 @@ function validateQuestion(
   if (correctCount !== 1) throw new Error('AI 出的题正确答案不唯一，请重试。')
 
   return {
-    id: `ai-${subject}-${Date.now()}`,
+    id: `ai-${subject}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     subject,
     category: categoryId,
     grade: '四-六年级',

@@ -7,11 +7,13 @@ import Options from './components/Options'
 import Feedback from './components/Feedback'
 import ChatDock from './components/ChatDock'
 import Settings from './components/Settings'
+import BankGen from './components/BankGen'
 import { bankBySubject, shuffle } from './data/questions'
 import { categoriesBySubject, categoryName } from './data/curriculum'
 import { tokenize } from './lib/tokenize'
 import { evaluate } from './lib/feedback'
 import { askTutor, explainMistake, generateQuestion, isAIConfigured } from './lib/ai'
+import { clearGenBank, loadGenBank, saveGenBank } from './lib/store'
 import type { ChatTurn } from './lib/ai'
 import { DIFFICULTY_LABEL, emptyStats } from './types'
 import type { CatStat } from './components/FilterBar'
@@ -37,6 +39,9 @@ export default function App() {
 
   const [aiOn, setAiOn] = useState(isAIConfigured)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [bankOpen, setBankOpen] = useState(false)
+  const [genBank, setGenBank] = useState<Question[]>(() => loadGenBank())
+
   const [aiText, setAiText] = useState<string | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
 
@@ -46,15 +51,23 @@ export default function App() {
 
   const queues = useRef<Map<string, Question[]>>(new Map())
 
+  // 生成题库用 ref 读取，避免题库变化时重建出题函数、打断当前题目
+  const genBankRef = useRef<Question[]>(genBank)
+  useEffect(() => {
+    genBankRef.current = genBank
+    queues.current.clear() // 题库变了，清队列，下次出题用上新题
+  }, [genBank])
+
   const tokens = useMemo(
     () => (question ? tokenize(question.stem, question.keywords) : []),
     [question],
   )
 
   const availableDiffs = useMemo(() => {
-    const s = new Set(bankBySubject(subject).map((q) => q.difficulty))
+    const all = [...bankBySubject(subject), ...genBank.filter((q) => q.subject === subject)]
+    const s = new Set(all.map((q) => q.difficulty))
     return Array.from(s).sort((a, b) => a - b)
-  }, [subject])
+  }, [subject, genBank])
 
   const resetRound = useCallback(() => {
     setSelected(new Set())
@@ -64,8 +77,9 @@ export default function App() {
     setAiText(null)
   }, [])
 
+  // 内置题库 + 本机生成的题库
   const buildPool = useCallback((s: Subject, cat: string, diff: number) => {
-    let qs = bankBySubject(s)
+    let qs = [...bankBySubject(s), ...genBankRef.current.filter((q) => q.subject === s)]
     if (cat !== 'all') qs = qs.filter((q) => q.category === cat)
     if (diff !== 0) qs = qs.filter((q) => q.difficulty === diff)
     return qs
@@ -89,9 +103,7 @@ export default function App() {
       setLoadingQ(true)
       setQError(null)
       try {
-        // 难度：按筛选走；「全部」时随机一档
         const d = (diff !== 0 ? diff : 1 + Math.floor(Math.random() * 3)) as 1 | 2 | 3
-        // 题型：按筛选走；「综合」时随机一个题型，让 AI 出的题仍归入题型体系
         const cats = categoriesBySubject(s)
         const catId = cat !== 'all' ? cat : cats[Math.floor(Math.random() * cats.length)].id
         const q = await generateQuestion(s, d, catId)
@@ -107,7 +119,6 @@ export default function App() {
     [loadFromBank, resetRound],
   )
 
-  // 首次进入 + 切换学科/专项/难度时出题
   useEffect(() => {
     loadFromBank(subject, category, diffFilter)
     setChatMsgs([])
@@ -115,7 +126,7 @@ export default function App() {
 
   const changeSubject = (s: Subject) => {
     setSubject(s)
-    setCategory('all') // 题型随学科变化，回到综合
+    setCategory('all')
   }
 
   const toggleToken = (index: number) => {
@@ -158,6 +169,18 @@ export default function App() {
 
   const retry = () => resetRound()
   const next = () => loadFromBank(subject, category, diffFilter)
+
+  const onGenerated = (qs: Question[]) => {
+    setGenBank((prev) => {
+      const merged = [...prev, ...qs]
+      saveGenBank(merged)
+      return merged
+    })
+  }
+  const onClearBank = () => {
+    clearGenBank()
+    setGenBank([])
+  }
 
   const askAI = async () => {
     if (!question || !evaluation) return
@@ -207,6 +230,7 @@ export default function App() {
         stats={stats}
         aiConfigured={aiOn}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenBank={() => setBankOpen(true)}
       />
 
       <main className="sheet">
@@ -318,6 +342,17 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSaved={() => setAiOn(isAIConfigured())}
+      />
+
+      <BankGen
+        open={bankOpen}
+        onClose={() => setBankOpen(false)}
+        aiConfigured={aiOn}
+        defaultSubject={subject}
+        onOpenSettings={() => setSettingsOpen(true)}
+        genCount={genBank.length}
+        onGenerated={onGenerated}
+        onClear={onClearBank}
       />
     </div>
   )

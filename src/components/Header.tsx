@@ -1,4 +1,4 @@
-import { Settings as SettingsIcon } from 'lucide-react'
+import { Database, Settings as SettingsIcon } from 'lucide-react'
 import { SUBJECTS } from '../types'
 import type { Stats, Subject } from '../types'
 
@@ -7,6 +7,7 @@ interface Props {
   onSubject: (s: Subject) => void
   stats: Stats
   onOpenSettings: () => void
+  onOpenBank: () => void
   aiConfigured: boolean
 }
 
@@ -15,6 +16,7 @@ export default function Header({
   onSubject,
   stats,
   onOpenSettings,
+  onOpenBank,
   aiConfigured,
 }: Props) {
   return (
@@ -50,6 +52,15 @@ export default function Header({
           <b>{stats.streak}</b>
           <span>连对</span>
         </div>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onOpenBank}
+          aria-label="生成题库"
+          title="生成题库"
+        >
+          <Database size={18} />
+        </button>
         <button
           type="button"
           className={`icon-btn ${aiConfigured ? 'ai-on' : ''}`}

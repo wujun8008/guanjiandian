@@ -82,14 +82,17 @@ src/
     tokenize.ts          # 把题干按关键词锚点切成可点击片段
     feedback.ts          # 批改引擎：判定对错、生成针对性建议
     ai.ts                # OpenAI 兼容客户端：出题 / 陪读问答 / 个性化点评
+    store.ts             # 生成题库的本地存储（localStorage）
   components/
-    Header.tsx           # 顶栏：品牌、学科切换、统计、设置
+    Header.tsx           # 顶栏：品牌、学科切换、统计、生成题库、设置
     FilterBar.tsx        # 专项训练（题型）+ 难度筛选
     StemCard.tsx         # 题干 + 荧光笔划重点
     Options.tsx          # 核心意思 4 选 1
     Feedback.tsx         # 批改结果与建议
     ChatDock.tsx         # 底部「问问 AI 老师」抽屉
     Settings.tsx         # AI 设置弹窗
+    BankGen.tsx          # 生成题库弹窗
+docs/出题规范.md          # AI 出题的规范（构建时打进产物）
 Dockerfile               # 多阶段构建（node 构建 → nginx 托管）
 nginx.conf               # 静态站点配置（gzip / 缓存 / SPA 回退）
 docker-compose.yml       # 一键起容器
@@ -120,14 +123,24 @@ docker-compose.yml       # 一键起容器
 
 ### AI（`src/lib/ai.ts`）
 
-OpenAI 兼容：`POST {baseUrl}/chat/completions`。三个能力：
+OpenAI 兼容：`POST {baseUrl}/chat/completions`。四个能力：
 
 - **实时出题**（可按当前题型生成）：让模型返回严格 JSON，前端 `validateQuestion` 校验后才用；
+- **批量生成题库**：见下；
 - **陪读问答**：底部「问问 AI 老师」，孩子向 AI 提问；
 - **个性化点评**：针对本次作答给一段话。
 
 配置（Base URL / Key / Model）存在浏览器 `localStorage`，Key 不上传。
 面板里内置了 DeepSeek / 通义千问 / 智谱 GLM / Kimi / OpenAI 的快捷预设。
+
+### 生成题库（`src/components/BankGen.tsx` + `src/lib/store.ts`）
+
+界面右上角「生成题库」按钮 → 弹窗里选 学科 / 题型（多选）/ 难度（多选）/ 每组合题数 →
+一键让 AI 批量出题，带进度条，可中途停止。生成的题存在浏览器 `localStorage`
+（键 `guanjiandian.bank.v1`），和内置题库**合并**后一起参与出题与筛选。
+
+出题依据是 **`docs/出题规范.md`** —— 它通过 Vite 的 `?raw` 在**构建时**打进产物，
+作为 `ai.ts` 里出题 system prompt 的一部分。**要改 AI 出题风格，就改这个 md**（改完需重新构建）。
 
 ### 设计
 
@@ -150,9 +163,11 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。三个能力：
 ## 7. 已完成 & 已验证
 
 - 全部功能 + 30 题题库（15 题型 × 基础/进阶）
+- **AI 生成题库**：按《出题规范》批量出题、存入本机、与内置题库合并
 - `typecheck` / `build` 通过
 - **数据自检通过**：30 题、15 题型，关键词零错位、答案唯一、每题型基础+进阶齐全
-- 截图确认：专项切换、进阶出题、批改反馈
+- **生成流程端到端验证**（Playwright 拦截接口）：生成 10 题 → 写入 localStorage → 在筛选里能抽到
+- 截图确认：专项切换、进阶出题、批改反馈、生成题库弹窗
 - 单文件版从 `file://` 打开零报错
 - 已推 GitHub；已加 Docker 部署
 
@@ -160,12 +175,12 @@ OpenAI 兼容：`POST {baseUrl}/chat/completions`。三个能力：
 
 ## 8. 下一步（还没做）
 
-- **「挑战」难度**：目前只有基础/进阶，可补第三档；
+- **「挑战」难度**：内置题库目前只有基础/进阶，可补第三档（AI 生成已支持挑战）；
 - **按题型生成专项小练习**：错哪类就多练哪类；
 - **家长看板**：记录各题型正确率随时间的变化；
 - **GitHub Pages**：给孩子一个网址，平板/手机直接打开就玩；
 - **后端代理**：部署到公网、给多人用、又想藏住 API Key 时，需要加一个小代理（这是唯一需要"改造"的场景）；
-- 继续扩充题库（尤其把每个题型的难度层次拉开）。
+- **题库导入**：把真题题干（粘贴/CSV）批量转成游戏格式，接开源数据集（Ape210K 等）。
 
 ---
 
